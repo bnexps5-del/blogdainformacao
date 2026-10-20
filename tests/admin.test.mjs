@@ -6,3 +6,26 @@ test('rejects writes without login and rejects cross origin',async()=>{const h=s
 test('login, global update, live redirect and logout',async()=>{const h=setup();const login=await h(req('/api/admin/login','POST',{username:'adminx',password:'test-password-only'}),{ip:'test'});assert.equal(login.status,200);const cookie=login.headers.get('set-cookie');assert.match(cookie,/HttpOnly/);assert.match(cookie,/Secure/);const auth=cookie.split(';')[0];let r=await h(req('/api/admin/config','PUT',{officialUrl:'https://www.gov.br/programa'},auth));assert.equal(r.status,200);let data=await (await h(req('/api/config'))).json();assert.equal(data.officialUrl,'https://www.gov.br/programa');r=await h(req('/go'));assert.equal(r.status,302);assert.equal(r.headers.get('location'),data.officialUrl);await h(req('/api/admin/logout','POST',{},auth));assert.equal((await h(req('/api/admin/session','GET',null,auth))).status,401);});
 test('rejects unsafe destinations',()=>{for(const url of ['javascript:alert(1)','http://www.gov.br','https://localhost/','https://127.0.0.1/','https://user:pass@gov.br/'])assert.throws(()=>validLink(url));});
 test('throttles repeated failures',async()=>{const h=setup();for(let i=0;i<5;i++)assert.equal((await h(req('/api/admin/login','POST',{username:'adminx',password:'wrong'}),{ip:'one-client'})).status,401);assert.equal((await h(req('/api/admin/login','POST',{username:'adminx',password:'test-password-only'}),{ip:'one-client'})).status,429);});
+
+test('online counts unique active visitors, excludes stale records and protects dashboard',async()=>{
+ const map=new Map(),store={async get(k){return map.get(k)||null},async setJSON(k,v){map.set(k,v)},async delete(k){map.delete(k)},async list({prefix}){return {blobs:[...map.keys()].filter(k=>k.startsWith(prefix)).map(key=>({key}))}}};
+ const h=makeHandler(store,env),id='10000000-0000-4000-8000-000000000001';
+ assert.equal((await h(req('/api/admin/online'))).status,401);
+ assert.equal((await h(req('/api/presence','POST',{id,path:'/historias/entregador/'}))).status,200);
+ assert.equal((await h(req('/api/presence','POST',{id,path:'/guia/'}))).status,200);
+ assert.equal((await h(req('/api/presence','POST',{id,path:'/adminx'}))).status,400);
+ assert.equal((await h(req('/api/presence','POST',{id,path:'/guia/?email=private'}))).status,400);
+ const now=Date.now(),bucket=Math.floor(now/60000);
+ map.set('presence/'+bucket+'/expired',{path:'/',lastSeen:now-100000});
+ const login=await h(req('/api/admin/login','POST',{username:'adminx',password:'test-password-only'}),{ip:'test'}),auth=login.headers.get('set-cookie').split(';')[0];
+ const data=await (await h(req('/api/admin/online','GET',null,auth))).json();
+ assert.equal(data.online,1);assert.deepEqual(data.pages,[{path:'/guia/',count:1}]);
+});
+
+test('login accepts server environment password and rejects unconfigured authentication',async()=>{
+ const map=new Map(),store={async get(k){return map.get(k)||null},async setJSON(k,v){map.set(k,v)},async delete(k){map.delete(k)}};
+ const h=makeHandler(store,{ADMIN_PASSWORD:'local-test-password'});
+ assert.equal((await h(req('/api/admin/login','POST',{username:'adminx',password:'wrong'}))).status,401);
+ assert.equal((await h(req('/api/admin/login','POST',{username:'adminx',password:'local-test-password'}))).status,200);
+ const unconfigured=makeHandler(store,{});assert.equal((await unconfigured(req('/api/admin/login','POST',{}))).status,503);
+});

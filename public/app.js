@@ -1,4 +1,10 @@
 document.addEventListener('DOMContentLoaded',()=>{
+ if(!location.pathname.startsWith('/admin')){
+  let visitorId=crypto.randomUUID();
+  try{const saved=JSON.parse(localStorage.getItem('blog-presence')||'null');if(saved&&saved.until>Date.now())visitorId=saved.id;else localStorage.setItem('blog-presence',JSON.stringify({id:visitorId,until:Date.now()+86400000}));}catch{}
+  const heartbeat=()=>{if(document.visibilityState!=='visible')return;fetch('/api/presence',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id:visitorId,path:location.pathname}),credentials:'omit',cache:'no-store'}).catch(()=>{});};
+  heartbeat();setInterval(heartbeat,30000);document.addEventListener('visibilitychange',heartbeat);
+ }
  const menu=document.querySelector('.menu');
  menu?.addEventListener('click',()=>{const open=document.querySelector('header').classList.toggle('open');menu.setAttribute('aria-expanded',String(open));});
  document.querySelectorAll('.filter').forEach(button=>button.addEventListener('click',()=>{

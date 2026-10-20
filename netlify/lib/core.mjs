@@ -22,20 +22,39 @@ export function makeHandler(store,env=process.env){
    if(Number(req.headers.get('content-length')||0)>8192)return json({error:'Pedido muito grande.'},413);
   }
   if(path==='/api/config'&&method==='GET')return json(await config());
+  if(path==='/api/presence'&&method==='POST'){
+   const raw=await req.text();if(raw.length>1024)return json({error:'Pedido muito grande.'},413);
+   let data;try{data=JSON.parse(raw);}catch{return json({error:'Pedido inválido.'},400);}
+   if(!/^[a-f0-9-]{36}$/.test(data.id||'')||typeof data.path!=='string'||!/^\/(?:[a-zA-Z0-9/_-]*)$/.test(data.path)||data.path.length>180||/^\/admin/.test(data.path))return json({error:'Dados inválidos.'},400);
+   const now=Date.now(),bucket=Math.floor(now/60000);
+   await store.setJSON('presence/'+bucket+'/'+digest(data.id),{path:data.path,lastSeen:now});
+   return json({ok:true});
+  }
   if(path==='/go'&&method==='GET'){const c=await config();if(!c.officialUrl)return new Response('O link oficial ainda não foi configurado. Volte à página e tente novamente mais tarde.',{status:503,headers:{'content-type':'text/plain; charset=utf-8','cache-control':'no-store'}});let target;try{target=validLink(c.officialUrl);}catch{return json({error:'Destino indisponível.'},503);}return new Response(null,{status:302,headers:{location:target,'cache-control':'no-store','referrer-policy':'strict-origin-when-cross-origin'}});}
   if(path==='/api/admin/login'&&method==='POST'){
-   if(!env.ADMIN_PASSWORD_HASH||!env.ADMIN_PASSWORD_SALT)return json({error:'A autenticação ainda precisa ser configurada na hospedagem.'},503);
+   if((!env.ADMIN_PASSWORD_HASH||!env.ADMIN_PASSWORD_SALT)&&!env.ADMIN_PASSWORD)return json({error:'A senha do AdminX ainda precisa ser definida no Netlify.'},503);
    const ip=context.ip||'unknown',key='attempt/'+digest(ip),now=Date.now();let attempts=await store.get(key,{type:'json'});
    if(attempts&&attempts.until>now&&attempts.count>=5)return json({error:'Muitas tentativas. Aguarde 15 minutos.'},429,{'retry-after':'900'});
    const raw=await req.text();if(raw.length>8192)return json({error:'Pedido muito grande.'},413);let data;try{data=JSON.parse(raw);}catch{return json({error:'Pedido inválido.'},400);}
    const username=String(data.username||'').slice(0,120),password=String(data.password||'').slice(0,1024);
-   const ok=equal(username,env.ADMIN_USERNAME||'adminx')&&equal(verifier(password,env.ADMIN_PASSWORD_SALT),env.ADMIN_PASSWORD_HASH);
+   const salt=env.ADMIN_PASSWORD_SALT||'blog-admin-environment-v1';
+   const expected=env.ADMIN_PASSWORD_HASH||verifier(env.ADMIN_PASSWORD,salt);
+   const ok=equal(username,env.ADMIN_USERNAME||'adminx')&&equal(verifier(password,salt),expected);
    if(!ok){if(!attempts||attempts.until<=now)attempts={count:0,until:now+900000};attempts.count++;await store.setJSON(key,attempts);return json({error:'Usuário ou senha incorretos.'},401);}
    await store.delete(key);const token=randomBytes(32).toString('hex');await store.setJSON('session/'+digest(token),{username,expiresAt:now+lifetime});
    return json({authenticated:true},200,{'set-cookie':cookie(token,lifetime/1000)});
   }
   if(path.startsWith('/api/admin/')){
    const auth=await session(req);if(!auth)return json({error:'Entre na sua conta para continuar.'},401);
+   if(path==='/api/admin/online'&&method==='GET'){
+    const now=Date.now(),bucket=Math.floor(now/60000),unique=new Map();
+    for(let n=0;n<3;n++){
+     const {blobs}=await store.list({prefix:'presence/'+(bucket-n)+'/'});
+     for(let i=0;i<blobs.length;i+=20){await Promise.all(blobs.slice(i,i+20).map(async({key})=>{const v=await store.get(key,{type:'json'});if(v&&v.lastSeen>now-90000){const id=key.split('/').pop(),prev=unique.get(id);if(!prev||v.lastSeen>prev.lastSeen)unique.set(id,v);}}));}
+    }
+    const pages=new Map();for(const v of unique.values())pages.set(v.path,(pages.get(v.path)||0)+1);
+    return json({online:unique.size,pages:[...pages].map(([path,count])=>({path,count})).sort((a,b)=>b.count-a.count),updatedAt:new Date(now).toISOString(),windowSeconds:90});
+   }
    if(path==='/api/admin/session'&&method==='GET')return json({authenticated:true,username:auth.username,...await config()});
    if(path==='/api/admin/logout'&&method==='POST'){await store.delete(auth.key);return json({ok:true},200,{'set-cookie':cookie('',0)});}
    if(path==='/api/admin/config'&&method==='PUT'){

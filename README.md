@@ -35,3 +35,7 @@ Verificação de senha via scrypt com salt, comparação de hash, sessão de oit
 `npm run check` executa validação de sintaxe e testes para rejeição de alterações sem login, origem indevida, login, atualização global, redirecionamento, logout, destinos inválidos e limitação de tentativas.
 
 O link oficial permanece pendente. As narrativas são ilustrativas; o site não se apresenta como órgão oficial e não realiza inscrições.
+
+## AdminX e visitantes online
+O login está em /adminx. Defina ADMIN_PASSWORD como segredo nas variáveis de ambiente das Functions no Netlify e publique novamente. O usuário padrão é adminx. A senha fica restrita ao servidor; nunca deve entrar no GitHub. O método anterior com salt e hash continua compatível. O painel mostra navegadores ativos nos últimos 90 segundos, agrupados por caminho, com atualização a cada 15 segundos. A contagem é uma estimativa, não identifica pessoas, e os registros são limpos diariamente.
+
