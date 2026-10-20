@@ -1,0 +1,1 @@
+{"name":"blogdainformacao","version":"1.0.0","private":true,"type":"module","scripts":{"check":"node --check netlify/functions/api.mjs && node --check netlify/lib/core.mjs && node --check public/admin/admin.js && node --test tests/admin.test.mjs","dev":"netlify dev"},"dependencies":{"@netlify/blobs":"^11.0.0"},"engines":{"node":">=22"}}
