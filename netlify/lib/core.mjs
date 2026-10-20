@@ -27,7 +27,8 @@ export function makeHandler(store,env=process.env){
    let data;try{data=JSON.parse(raw);}catch{return json({error:'Pedido inválido.'},400);}
    if(!/^[a-f0-9-]{36}$/.test(data.id||'')||typeof data.path!=='string'||!/^\/(?:[a-zA-Z0-9/_-]*)$/.test(data.path)||data.path.length>180||/^\/admin/.test(data.path))return json({error:'Dados inválidos.'},400);
    const now=Date.now(),bucket=Math.floor(now/60000);
-   await store.setJSON('presence/'+bucket+'/'+digest(data.id),{path:data.path,lastSeen:now});
+   const text=v=>typeof v==='string'?v.slice(0,120):'';
+   await store.setJSON('presence/'+bucket+'/'+digest(data.id),{path:data.path,lastSeen:now,ip:text(context.ip),city:text(context.geo?.city),region:text(context.geo?.subdivision?.name),country:text(context.geo?.country?.name)});
    return json({ok:true});
   }
   if(path==='/go'&&method==='GET'){const c=await config();if(!c.officialUrl)return new Response('O link oficial ainda não foi configurado. Volte à página e tente novamente mais tarde.',{status:503,headers:{'content-type':'text/plain; charset=utf-8','cache-control':'no-store'}});let target;try{target=validLink(c.officialUrl);}catch{return json({error:'Destino indisponível.'},503);}return new Response(null,{status:302,headers:{location:target,'cache-control':'no-store','referrer-policy':'strict-origin-when-cross-origin'}});}
@@ -53,7 +54,8 @@ export function makeHandler(store,env=process.env){
      for(let i=0;i<blobs.length;i+=20){await Promise.all(blobs.slice(i,i+20).map(async({key})=>{const v=await store.get(key,{type:'json'});if(v&&v.lastSeen>now-90000){const id=key.split('/').pop(),prev=unique.get(id);if(!prev||v.lastSeen>prev.lastSeen)unique.set(id,v);}}));}
     }
     const pages=new Map();for(const v of unique.values())pages.set(v.path,(pages.get(v.path)||0)+1);
-    return json({online:unique.size,pages:[...pages].map(([path,count])=>({path,count})).sort((a,b)=>b.count-a.count),updatedAt:new Date(now).toISOString(),windowSeconds:90});
+    const visitors=[...unique.values()].sort((a,b)=>b.lastSeen-a.lastSeen).map(v=>({path:v.path,lastSeen:new Date(v.lastSeen).toISOString(),ip:v.ip||'',city:v.city||'',region:v.region||'',country:v.country||''}));
+    return json({online:unique.size,visitors,pages:[...pages].map(([path,count])=>({path,count})).sort((a,b)=>b.count-a.count),updatedAt:new Date(now).toISOString(),windowSeconds:90});
    }
    if(path==='/api/admin/session'&&method==='GET')return json({authenticated:true,username:auth.username,...await config()});
    if(path==='/api/admin/logout'&&method==='POST'){await store.delete(auth.key);return json({ok:true},200,{'set-cookie':cookie('',0)});}

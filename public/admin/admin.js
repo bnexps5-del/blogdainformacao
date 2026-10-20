@@ -1,9 +1,14 @@
 const $=id=>document.getElementById(id);let current='';
 let onlineTimer=null,onlinePending=false;
+function renderVisitors(data){
+ const body=$('online-visitors');body.replaceChildren();
+ for(const visitor of data.visitors||[]){const row=document.createElement('tr');for(const value of [visitor.ip||'Indisponível',[visitor.city,visitor.region,visitor.country].filter(Boolean).join(' · ')||'Localização indisponível',visitor.path,new Date(visitor.lastSeen).toLocaleTimeString('pt-BR')]){const cell=document.createElement('td');cell.textContent=value;row.append(cell);}body.append(row);}
+ $('visitors-empty').hidden=Boolean(data.visitors?.length);
+}
 async function refreshOnline(){
  if(onlinePending||$('dashboard').hidden||document.visibilityState!=='visible')return;
  onlinePending=true;
- try{const data=await api('online');$('online-count').textContent=data.online;$('online-status').textContent='Atualizado às '+new Date(data.updatedAt).toLocaleTimeString('pt-BR');$('online-pages').replaceChildren();if(!data.pages.length){$('online-pages').textContent='Nenhum visitante ativo neste momento.';}for(const page of data.pages){const row=document.createElement('div');row.className='online-row';const label=document.createElement('span'),count=document.createElement('strong');label.textContent=page.path;count.textContent=page.count+' online';row.append(label,count);$('online-pages').append(row);}}
+ try{const data=await api('online');renderVisitors(data);$('online-count').textContent=data.online;$('online-status').textContent='Atualizado às '+new Date(data.updatedAt).toLocaleTimeString('pt-BR');$('online-pages').replaceChildren();if(!data.pages.length){$('online-pages').textContent='Nenhum visitante ativo neste momento.';}for(const page of data.pages){const row=document.createElement('div');row.className='online-row';const label=document.createElement('span'),count=document.createElement('strong');label.textContent=page.path;count.textContent=page.count+' online';row.append(label,count);$('online-pages').append(row);}}
  catch(e){$('online-count').textContent='—';$('online-status').textContent='Não foi possível atualizar os visitantes. Tentando novamente...';if(e.status===401){showLogin();message('Sua sessão expirou. Entre novamente.',true);}}
  finally{onlinePending=false;}
 }

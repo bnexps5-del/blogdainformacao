@@ -12,7 +12,8 @@ test('online counts unique active visitors, excludes stale records and protects 
  const h=makeHandler(store,env),id='10000000-0000-4000-8000-000000000001';
  assert.equal((await h(req('/api/admin/online'))).status,401);
  assert.equal((await h(req('/api/presence','POST',{id,path:'/historias/entregador/'}))).status,200);
- assert.equal((await h(req('/api/presence','POST',{id,path:'/guia/'}))).status,200);
+ const presence=await h(req('/api/presence','POST',{id,path:'/guia/',ip:'spoofed',city:'spoofed'}),{ip:'203.0.113.7',geo:{city:'Salvador',subdivision:{name:'Bahia'},country:{name:'Brazil'},latitude:12,longitude:34}});
+ assert.equal(presence.status,200);assert.deepEqual(await presence.json(),{ok:true});
  assert.equal((await h(req('/api/presence','POST',{id,path:'/adminx'}))).status,400);
  assert.equal((await h(req('/api/presence','POST',{id,path:'/guia/?email=private'}))).status,400);
  const now=Date.now(),bucket=Math.floor(now/60000);
@@ -20,6 +21,7 @@ test('online counts unique active visitors, excludes stale records and protects 
  const login=await h(req('/api/admin/login','POST',{username:'adminx',password:'test-password-only'}),{ip:'test'}),auth=login.headers.get('set-cookie').split(';')[0];
  const data=await (await h(req('/api/admin/online','GET',null,auth))).json();
  assert.equal(data.online,1);assert.deepEqual(data.pages,[{path:'/guia/',count:1}]);
+ assert.equal(data.visitors.length,1);assert.equal(data.visitors[0].ip,'203.0.113.7');assert.equal(data.visitors[0].city,'Salvador');assert.equal(data.visitors[0].region,'Bahia');assert.equal(data.visitors[0].country,'Brazil');assert.equal(data.visitors[0].latitude,undefined);assert.equal(data.visitors[0].longitude,undefined);
 });
 
 test('login accepts server environment password and rejects unconfigured authentication',async()=>{
